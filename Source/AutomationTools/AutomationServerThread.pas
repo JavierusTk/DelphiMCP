@@ -9,7 +9,7 @@ unit AutomationServerThread;
   - Returns JSON-RPC responses with results or errors
 
   COMMUNICATION:
-  - Request Pipe: Configurable (default: \\.\pipe\Automation_MCP_Request)
+  - Request Pipe: Configurable (default: \\.\pipe\DelphiApp_MCP_Request)
   - Protocol: JSON-RPC 2.0
   - Pattern: Request/Response (synchronous)
 
@@ -52,8 +52,7 @@ implementation
 
 uses
   AutomationLogger,       // Logging abstraction
-  AutomationToolRegistry, // Tool registry for dynamic dispatch
-  AutomationBroker;       // Message-based broker for modal-safe execution
+  AutomationToolRegistry; // Tool registry for dynamic dispatch
 
 const
   AUTOMATION_VERSION = '1.0.0';  // Generic framework version
@@ -167,6 +166,7 @@ begin
 
   try
     try
+      // OUTER LOOP: Create pipe once, handle multiple connections
       while not Terminated and not FTerminating do
       begin
         LogDebug('Creating named pipe: ' + FPipeName);
@@ -185,95 +185,116 @@ begin
 
         if FPipeHandle <> INVALID_HANDLE_VALUE then
         begin
-          LogInfo('Pipe created successfully, waiting for connection');
-          try
-            // Set up overlapped structure for cancellable wait
-            FillChar(Overlapped, SizeOf(Overlapped), 0);
-            Overlapped.hEvent := FEventHandle;
+          LogInfo('Pipe created successfully');
 
-            // Wait for automation client to connect
-            Connected := ConnectNamedPipe(FPipeHandle, @Overlapped);
-            ErrorCode := GetLastError;
+          // INNER LOOP: Reuse same pipe handle for multiple client connections
+          // This eliminates the 50ms gap that caused "Cannot connect" errors
+          while not Terminated and not FTerminating do
+          begin
+            try
+              // Set up overlapped structure for cancellable wait
+              FillChar(Overlapped, SizeOf(Overlapped), 0);
+              Overlapped.hEvent := FEventHandle;
+              ResetEvent(FEventHandle); // Reset event for new connection
 
-            if not Connected and (ErrorCode = ERROR_IO_PENDING) then
-            begin
-              // Wait for connection or termination signal
-              while not (Terminated or FTerminating) do
+              LogDebug('Waiting for client connection...');
+
+              // Wait for automation client to connect
+              Connected := ConnectNamedPipe(FPipeHandle, @Overlapped);
+              ErrorCode := GetLastError;
+
+              if not Connected and (ErrorCode = ERROR_IO_PENDING) then
               begin
-                WaitResult := WaitForSingleObject(FEventHandle, 100);
-                if WaitResult = WAIT_OBJECT_0 then
+                // Wait for connection or termination signal
+                while not (Terminated or FTerminating) do
                 begin
-                  Connected := True;
-                  Break;
+                  WaitResult := WaitForSingleObject(FEventHandle, 100);
+                  if WaitResult = WAIT_OBJECT_0 then
+                  begin
+                    Connected := True;
+                    Break;
+                  end;
                 end;
+              end
+              else if ErrorCode = ERROR_PIPE_CONNECTED then
+              begin
+                Connected := True;
               end;
-            end
-            else if ErrorCode = ERROR_PIPE_CONNECTED then
-            begin
-              Connected := True;
-            end;
 
-            if Connected and not (Terminated or FTerminating) then
-            begin
-              LogInfo('Automation client connected to pipe');
-
-              // Read the automation request
-              FillChar(Buffer^, BUFFER_SIZE, 0);
-              if ReadFile(FPipeHandle, Buffer^, BUFFER_SIZE - 1, BytesRead, nil) then
+              if Connected and not (Terminated or FTerminating) then
               begin
-                SetString(RequestMessage, Buffer, BytesRead);
-                LogDebug('Received ' + IntToStr(BytesRead) + ' bytes');
-                LogDebug('Request: ' + RequestMessage);
+                LogInfo('Automation client connected to pipe');
 
-                // Handle in main thread using broker (works with modal dialogs)
-                ResponseMessage := '';
-                var Cmd: IAutomationCommand;
-                var LocalRequest: string;
-                LocalRequest := RequestMessage; // Capture for anonymous proc
-
-                Cmd := TAutomationCommand.Create(
-                  procedure
-                  begin
-                    HandleAutomationRequest(LocalRequest, ResponseMessage);
-                  end
-                );
-
-                if not TAutomationBroker.Instance.EnqueueAndWait(Cmd, 30000) then
+                // Read the automation request
+                FillChar(Buffer^, BUFFER_SIZE, 0);
+                if ReadFile(FPipeHandle, Buffer^, BUFFER_SIZE - 1, BytesRead, nil) then
                 begin
-                  LogError('Command execution timeout (30s)');
-                  ResponseMessage := '{"jsonrpc":"2.0","error":{"code":-32603,"message":"Timeout executing command"},"id":null}';
-                end;
+                  SetString(RequestMessage, Buffer, BytesRead);
+                  LogDebug('Received ' + IntToStr(BytesRead) + ' bytes');
+                  LogDebug('Request: ' + RequestMessage);
 
-                // Send response back through same pipe
-                if ResponseMessage <> '' then
-                begin
-                  LogDebug('Response: ' + ResponseMessage);
-                  ResponseAnsi := AnsiString(ResponseMessage);
-                  if WriteFile(FPipeHandle, ResponseAnsi[1], Length(ResponseAnsi), BytesWritten, nil) then
+                  // Handle in main thread (CRITICAL for VCL/UI operations)
+                  ResponseMessage := '';
+                  Synchronize(
+                    procedure
+                    begin
+                      HandleAutomationRequest(RequestMessage, ResponseMessage);
+                    end
+                  );
+
+                  // Send response back through same pipe
+                  if ResponseMessage <> '' then
                   begin
-                    LogDebug('Sent ' + IntToStr(BytesWritten) + ' bytes back to client');
-                    FlushFileBuffers(FPipeHandle);
+                    LogDebug('Response: ' + ResponseMessage);
+                    ResponseAnsi := AnsiString(ResponseMessage);
+                    if WriteFile(FPipeHandle, ResponseAnsi[1], Length(ResponseAnsi), BytesWritten, nil) then
+                    begin
+                      LogDebug('Sent ' + IntToStr(BytesWritten) + ' bytes back to client');
+                      FlushFileBuffers(FPipeHandle);
+                    end
+                    else
+                    begin
+                      ErrorCode := GetLastError;
+                      LogError('WriteFile failed: ' + SysErrorMessage(ErrorCode));
+                    end;
                   end
                   else
-                  begin
-                    ErrorCode := GetLastError;
-                    LogError('WriteFile failed: ' + SysErrorMessage(ErrorCode));
-                  end;
+                    LogWarning('Empty response generated');
                 end
                 else
-                  LogWarning('Empty response generated');
+                begin
+                  ErrorCode := GetLastError;
+                  LogError('ReadFile failed: ' + SysErrorMessage(ErrorCode));
+                  // Break inner loop on read error - pipe may be broken
+                  Break;
+                end;
+
+                // Disconnect THIS client (but keep pipe alive for next connection)
+                DisconnectNamedPipe(FPipeHandle);
+                LogDebug('Client disconnected, pipe ready for next connection');
+
+                // Loop back to ConnectNamedPipe() immediately - NO SLEEP, NO GAP
               end
-              else
+              else if not (Terminated or FTerminating) then
               begin
-                ErrorCode := GetLastError;
-                LogError('ReadFile failed: ' + SysErrorMessage(ErrorCode));
+                // Connection failed
+                LogError('ConnectNamedPipe failed - breaking inner loop');
+                Break; // Exit inner loop to recreate pipe
+              end;
+
+            except
+              on E: Exception do
+              begin
+                LogError('Exception in connection handler: ' + E.Message);
+                Break; // Exit inner loop to recreate pipe
               end;
             end;
-          finally
-            DisconnectNamedPipe(FPipeHandle);
-            CloseHandle(FPipeHandle);
-            FPipeHandle := INVALID_HANDLE_VALUE;
-          end;
+          end; // End INNER LOOP
+
+          // Close pipe only when exiting inner loop (error or termination)
+          LogDebug('Closing pipe handle');
+          CloseHandle(FPipeHandle);
+          FPipeHandle := INVALID_HANDLE_VALUE;
         end
         else
         begin
@@ -284,11 +305,12 @@ begin
             Sleep(100);
         end;
 
+        // Small delay before recreating pipe (only after error or termination)
         if not Terminated and not FTerminating then
         begin
-          Sleep(50); // Small delay between pipe recreations
+          Sleep(50);
         end;
-      end;
+      end; // End OUTER LOOP
     except
       on E: Exception do
         LogError('Exception in automation server thread: ' + E.Message);

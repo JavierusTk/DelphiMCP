@@ -12,6 +12,7 @@ interface
 uses
   System.SysUtils,
   System.JSON,
+  System.Math,
   Winapi.Windows;
 
 type
@@ -80,13 +81,21 @@ begin
 end;
 
 function ConnectToPipe: THandle;
+const
+  MAX_RETRIES = 10;          // Increased from implicit infinite to explicit 10
+  INITIAL_RETRY_DELAY_MS = 2; // Start with 2ms delays
+  MAX_RETRY_DELAY_MS = 50;   // Cap at 50ms
 var
+  Attempt: Integer;
+  ErrorCode: DWORD;
   StartTime: DWORD;
+  RetryDelay: Integer;
 begin
   StartTime := GetTickCount;
+  RetryDelay := INITIAL_RETRY_DELAY_MS;
 
-  // Try to connect with timeout
-  while True do
+  // Aggressive retry with exponential backoff
+  for Attempt := 1 to MAX_RETRIES do
   begin
     Result := CreateFile(
       PChar(GetTargetPipeName),
@@ -99,20 +108,43 @@ begin
     );
 
     if Result <> INVALID_HANDLE_VALUE then
-      Exit; // Connected successfully
+      Exit; // Connected successfully!
 
-    // Check if pipe is busy and wait
-    if GetLastError = ERROR_PIPE_BUSY then
-    begin
-      if GetTickCount - StartTime > PIPE_TIMEOUT_MS then
-        Exit; // Timeout
+    ErrorCode := GetLastError;
 
-      if not WaitNamedPipe(PChar(GetTargetPipeName), 1000) then
-        Sleep(100);
-    end
+    // Check timeout
+    if GetTickCount - StartTime > PIPE_TIMEOUT_MS then
+      Exit; // Overall timeout reached
+
+    // Handle different error cases
+    case ErrorCode of
+      ERROR_PIPE_BUSY,
+      ERROR_FILE_NOT_FOUND,      // Pipe being recreated
+      ERROR_PIPE_NOT_CONNECTED:  // Pipe between disconnect/reconnect
+      begin
+        // These errors indicate timing issues - retry with backoff
+        if Attempt < MAX_RETRIES then
+        begin
+          // First try WaitNamedPipe (fast if pipe exists)
+          if not WaitNamedPipe(PChar(GetTargetPipeName), RetryDelay) then
+          begin
+            // If WaitNamedPipe fails, use Sleep for exponential backoff
+            Sleep(RetryDelay);
+          end;
+
+          // Exponential backoff: 2ms → 4ms → 8ms → 16ms → 32ms → 50ms (cap)
+          RetryDelay := Min(RetryDelay * 2, MAX_RETRY_DELAY_MS);
+        end;
+      end;
+
     else
-      Exit; // Other error - give up
+      // Other errors (access denied, invalid name, etc.) - don't retry
+      Exit;
+    end;
   end;
+
+  // All retries exhausted
+  Result := INVALID_HANDLE_VALUE;
 end;
 
 function ExecuteApplicationTool(const ToolName: string; Params: TJSONObject): TApplicationPipeResult;

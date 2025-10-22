@@ -22,7 +22,7 @@ unit AutomationSynchronization;
 interface
 
 uses
-  System.SysUtils, System.Classes, System.JSON, System.Generics.Collections,
+  System.SysUtils, System.Classes, System.JSON,
   Winapi.Windows, Winapi.Messages,
   Vcl.Forms, Vcl.Controls;
 

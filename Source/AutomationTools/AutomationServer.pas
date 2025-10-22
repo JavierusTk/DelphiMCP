@@ -93,7 +93,7 @@ uses
   Winapi.Windows,
   AutomationLogger,
   AutomationServerThread,
-  AutomationBroker;
+  AutomationBroker;  // For modal-safe execution (conditional usage)
 
 { TAutomationServer }
 
@@ -133,8 +133,12 @@ begin
   try
     LogInfo('Starting automation server on pipe: ' + Config.PipeName);
 
-    // Initialize broker BEFORE starting server thread
-    InitAutomationBroker;
+    // Initialize broker BEFORE starting server thread (if enabled)
+    if Config.EnableModalSupport then
+    begin
+      LogInfo('Initializing modal-safe broker');
+      InitAutomationBroker;
+    end;
 
     // Create and start server thread
     Thread := TAutomationServerThread.Create(Config.PipeName);
@@ -144,7 +148,10 @@ begin
     FConfig := Config;
     FRunning := True;
 
-    LogInfo('Automation server started successfully - ready for automation (modal-safe)');
+    if Config.EnableModalSupport then
+      LogInfo('Automation server started successfully - ready for automation (modal-safe)')
+    else
+      LogInfo('Automation server started successfully - ready for automation');
     Result := True;
 
   except
@@ -152,8 +159,9 @@ begin
     begin
       LogError('Failed to start automation server: ' + E.Message);
 
-      // Clean up broker on failure
-      DoneAutomationBroker;
+      // Clean up broker on failure (if it was initialized)
+      if Config.EnableModalSupport then
+        DoneAutomationBroker;
 
       if Assigned(FServerThread) then
       begin
@@ -205,8 +213,12 @@ begin
     FreeAndNil(FServerThread);
     FRunning := False;
 
-    // Finalize broker AFTER stopping thread
-    DoneAutomationBroker;
+    // Finalize broker AFTER stopping thread (if it was enabled)
+    if FConfig.EnableModalSupport then
+    begin
+      LogDebug('Finalizing modal-safe broker');
+      DoneAutomationBroker;
+    end;
 
     LogInfo('Automation server stopped');
 
@@ -222,7 +234,8 @@ begin
         FRunning := False;
       end;
 
-      DoneAutomationBroker;
+      if FConfig.EnableModalSupport then
+        DoneAutomationBroker;
     end;
   end;
 end;

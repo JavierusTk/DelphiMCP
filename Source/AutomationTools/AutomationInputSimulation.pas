@@ -297,6 +297,9 @@ end;
 procedure Tool_SendKeys(const Params: TJSONObject; out Result: TJSONObject);
 var
   Keys: string;
+  TargetHandle: Integer;
+  PrevForeground: HWND;
+  FocusSet: Boolean;
 begin
   Result := TJSONObject.Create;
   try
@@ -307,11 +310,60 @@ begin
       Exit;
     end;
 
-    SendKeysSequence(Keys);
+    // Optional: target a specific window by handle
+    if Params.TryGetValue<Integer>('target_handle', TargetHandle) and (TargetHandle <> 0) then
+    begin
+      // Check if target window is already foreground
+      PrevForeground := GetForegroundWindow;
 
-    Result.AddPair('success', TJSONBool.Create(True));
-    Result.AddPair('keys_sent', Keys);
-    OutputDebugString(PChar('MCP.SendKeys: Sent keys - ' + Keys));
+      if PrevForeground = HWND(TargetHandle) then
+      begin
+        // Target is already foreground - just send keys directly
+        SendKeysSequence(Keys);
+        Result.AddPair('success', TJSONBool.Create(True));
+        Result.AddPair('keys_sent', Keys);
+        Result.AddPair('targeted_window', TJSONNumber.Create(TargetHandle));
+        Result.AddPair('was_already_foreground', TJSONBool.Create(True));
+        OutputDebugString(PChar(Format('MCP.SendKeys: Sent keys to foreground window %d - %s', [TargetHandle, Keys])));
+      end
+      else
+      begin
+        // Try to set focus to target window
+        FocusSet := SetForegroundWindow(HWND(TargetHandle));
+
+        if FocusSet then
+        begin
+          // Give window time to process focus change
+          Sleep(100);
+
+          // Send keys
+          SendKeysSequence(Keys);
+
+          // Restore previous foreground window
+          if PrevForeground <> 0 then
+            SetForegroundWindow(PrevForeground);
+
+          Result.AddPair('success', TJSONBool.Create(True));
+          Result.AddPair('keys_sent', Keys);
+          Result.AddPair('targeted_window', TJSONNumber.Create(TargetHandle));
+          Result.AddPair('was_already_foreground', TJSONBool.Create(False));
+          OutputDebugString(PChar(Format('MCP.SendKeys: Sent keys to window %d - %s', [TargetHandle, Keys])));
+        end
+        else
+        begin
+          Result.AddPair('success', TJSONBool.Create(False));
+          Result.AddPair('error', Format('Failed to set focus to window handle %d (use target_handle only if window is already foreground)', [TargetHandle]));
+        end;
+      end;
+    end
+    else
+    begin
+      // No target specified - send to current foreground window
+      SendKeysSequence(Keys);
+      Result.AddPair('success', TJSONBool.Create(True));
+      Result.AddPair('keys_sent', Keys);
+      OutputDebugString(PChar('MCP.SendKeys: Sent keys - ' + Keys));
+    end;
   except
     on E: Exception do
     begin
@@ -442,7 +494,7 @@ end;
 
 function CreateSchema_SendKeys: TJSONObject;
 var
-  Props, Keys: TJSONObject;
+  Props, Keys, TargetHandle: TJSONObject;
   Required: TJSONArray;
 begin
   Result := TJSONObject.Create;
@@ -457,6 +509,13 @@ begin
     '{HOME}, {END}, {PAGEUP}, {PAGEDOWN}, {F1}-{F12}' + sLineBreak +
     'Example: "Hello{TAB}World{ENTER}"');
   Props.AddPair('keys', Keys);
+
+  TargetHandle := TJSONObject.Create;
+  TargetHandle.AddPair('type', 'number');
+  TargetHandle.AddPair('description', 'Optional: Window handle to send keys to. ' +
+    'If specified, the window will be brought to foreground, keys sent, then previous window restored. ' +
+    'Useful for sending keys to non-VCL modal windows (TOpenDialog, MessageDlg, etc.)');
+  Props.AddPair('target_handle', TargetHandle);
 
   Result.AddPair('properties', Props);
 

@@ -49,7 +49,8 @@ implementation
 
 uses
   Winapi.Windows,
-  AutomationDescribable;
+  AutomationDescribable,
+  AutomationWindowDetection;
 
 const
   MAX_DEPTH = 3; // Maximum nesting depth for control tree (prevent huge JSONs)
@@ -387,9 +388,29 @@ var
   FormsArray: TJSONArray;
   FormObj: TJSONObject;
   Form: TForm;
+  ModalInfo: TNonVCLModalInfo;
 begin
   FormsArray := TJSONArray.Create;
   try
+    // First, check for non-VCL modal windows
+    if DetectNonVCLModal(ModalInfo) then
+    begin
+      FormObj := TJSONObject.Create;
+      FormObj.AddPair('name', Format('__NonVCL_%d', [ModalInfo.WindowHandle]));
+      FormObj.AddPair('caption', ModalInfo.WindowTitle);
+      FormObj.AddPair('class', ModalInfo.WindowClass);
+      FormObj.AddPair('visible', TJSONBool.Create(True));
+      FormObj.AddPair('active', TJSONBool.Create(True)); // Non-VCL modal is always active
+      FormObj.AddPair('handle', TJSONNumber.Create(ModalInfo.WindowHandle));
+      FormObj.AddPair('is_vcl_form', TJSONBool.Create(False));
+      FormObj.AddPair('is_blocking_modal', TJSONBool.Create(True));
+      FormObj.AddPair('limited_interaction', TJSONBool.Create(True));
+      if ModalInfo.OwnerHandle <> 0 then
+        FormObj.AddPair('owner_handle', TJSONNumber.Create(ModalInfo.OwnerHandle));
+      FormsArray.AddElement(FormObj);
+    end;
+
+    // Then add all VCL forms
     for I := 0 to Screen.FormCount - 1 do
     begin
       Form := Screen.Forms[I];
@@ -400,6 +421,7 @@ begin
       FormObj.AddPair('visible', TJSONBool.Create(Form.Visible));
       FormObj.AddPair('active', TJSONBool.Create(Form.Active));
       FormObj.AddPair('handle', TJSONNumber.Create(Form.Handle));
+      FormObj.AddPair('is_vcl_form', TJSONBool.Create(True));
       FormsArray.AddElement(FormObj);
     end;
 

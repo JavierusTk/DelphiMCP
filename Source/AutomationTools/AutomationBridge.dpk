@@ -35,18 +35,12 @@ requires
 
 contains
   AutomationConfig in 'AutomationConfig.pas',
-  AutomationLogger in 'AutomationLogger.pas',
-  AutomationDescribable in 'AutomationDescribable.pas',
   AutomationToolRegistry in 'AutomationToolRegistry.pas',
   AutomationServer in 'AutomationServer.pas',
   AutomationServerThread in 'AutomationServerThread.pas',
   AutomationBroker in 'AutomationBroker.pas',
-  AutomationScreenshot in 'AutomationScreenshot.pas',
-  AutomationFormIntrospection in 'AutomationFormIntrospection.pas',
-  AutomationControlInteraction in 'AutomationControlInteraction.pas',
-  AutomationInputSimulation in 'AutomationInputSimulation.pas',
   AutomationSynchronization in 'AutomationSynchronization.pas',
-  AutomationTabulator in 'AutomationTabulator.pas',
-  TabOrderAnalyzer in 'TabOrderAnalyzer.pas';
+  AutomationLogger in 'AutomationLogger.pas',
+  AutomationControlResolver in 'AutomationControlResolver.pas';
 
 end.

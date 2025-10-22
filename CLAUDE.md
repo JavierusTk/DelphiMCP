@@ -4,20 +4,22 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-DelphiMCP is a work-in-progress framework for building MCP (Model Context Protocol) bridge servers that connect AI assistants like Claude Code with Delphi applications. It enables autonomous control and inspection of Delphi VCL applications through named pipe communication.
+DelphiMCP is a framework for building MCP (Model Context Protocol) bridge servers that connect AI assistants like Claude Code with Delphi applications. It enables autonomous control and inspection of Delphi VCL applications through named pipe communication.
 
-**⚠️ Current Status: Work in Progress**
-- **Known Limitation**: Modal windows are not yet supported - the framework currently blocks when modal forms are displayed
-- **Ready for**: Non-modal form automation, visual inspection, control interaction
-- **Not ready for**: Production use with modal dialogs, message boxes, or blocking forms
+**✅ Current Status: Production Ready (with known limitations)**
+- **Modal Window Support**: VCL modal forms and non-VCL dialogs (TOpenDialog, MessageDlg) fully supported
+- **Control Path Resolution**: Navigate unnamed controls via index notation (e.g., `"edtFichero.#0"`)
+- **41 Automation Tools**: Visual inspection, control interaction, keyboard/mouse, modal handling, synchronization
+- **See**: `Documentation/CONTROL-PATHS-AND-MODALS.md` for latest features and known issues
 
 **Key Capabilities:**
-- 30-tool Automation Framework for VCL automation (visual inspection, control interaction, keyboard/mouse, synchronization)
+- 41-tool Automation Framework for VCL automation (visual inspection, control interaction, keyboard/mouse, synchronization, modal support)
 - HTTP/SSE server for MCP protocol communication (port 3001)
 - Named pipe client for connecting to Delphi applications
 - Dynamic tool discovery and proxy forwarding
 - Debug output capture (OutputDebugString monitoring)
-- 39 total tools (30 automation + 9 bridge utilities)
+- Control path resolution for unnamed controls
+- Modal window detection and interaction (VCL and non-VCL)
 
 ## Repository Structure
 
@@ -30,26 +32,28 @@ This repository contains three main components:
 **Files**: 14 units (~6,000 lines)
 
 **Package Structure:**
-- **AutomationBridge.dpk** (13 infrastructure units)
+- **AutomationBridge.dpk** (14 infrastructure units)
   - Core: Config, Logger, Registry, Server, ServerThread, Describable
-  - Utilities: Screenshot, FormIntrospection, ControlInteraction, InputSimulation, Synchronization, Tabulator, TabOrderAnalyzer
-- **AutomationTools.dpk** (1 tool unit with 30 tools)
-  - AutomationCoreTools.pas - All 30 automation tool implementations
+  - Utilities: Screenshot, FormIntrospection, ControlInteraction, InputSimulation, Synchronization, Tabulator, TabOrderAnalyzer, WindowDetection, ControlResolver
+- **AutomationTools.dpk** (1 tool unit with 34 tools)
+  - AutomationCoreTools.pas - All 34 automation tool implementations
   - Depends on: AutomationBridge
 
 The core automation framework provides:
 - Named pipe server with JSON-RPC 2.0
 - Tool registry (runtime, extensible)
-- 30 generic automation tools
+- 41 automation tools (34 core + 6 CyberMAX + 1 debug)
 - Thread-safe VCL interaction
 - Logging abstraction
+- Modal window support (VCL and non-VCL)
+- Control path resolution for unnamed controls
 
 **Integration Pattern:**
 ```pascal
 // Typical usage (2 lines)
 uses AutomationServer, AutomationCoreTools;
 begin
-  RegisterCoreAutomationTools;  // Register 30 tools
+  RegisterCoreAutomationTools;  // Register 34 core tools
   StartAutomationServer;        // Start server
 end;
 ```
@@ -442,7 +446,7 @@ This framework is being developed alongside the **CyberMAX ERP** system, demonst
 - Full VCL form introspection and control
 - 70% token optimization for efficient API usage
 
-**Note**: The framework is designed to be application-agnostic and adaptable to any Delphi VCL application with an embedded MCP server, but modal window support is still under development.
+**Note**: The framework is designed to be application-agnostic and adaptable to any Delphi VCL application with an embedded MCP server. Modal window support (both VCL and non-VCL) is fully implemented. See `Documentation/CONTROL-PATHS-AND-MODALS.md` for details.
 
 ## Troubleshooting
 
@@ -490,6 +494,7 @@ This framework is being developed alongside the **CyberMAX ERP** system, demonst
 
 ## Version History
 
+- **v2.2** (2025-10-22) - Control path resolution, modal window support (VCL + non-VCL), 41 tools, ui.focus.get_path
 - **v2.1** (2025-10-07) - Framework extraction, debug capture, comprehensive docs
 - **v2.0** (2025-10-06) - Registry-based architecture, token optimization
 - **v1.0** (2025-10-04) - Initial production release
@@ -501,13 +506,19 @@ This framework is being developed alongside the **CyberMAX ERP** system, demonst
 
 ---
 
-**Status:** ⚠️ Work in Progress (Modal windows not yet supported)
+**Status:** ✅ Production Ready (with known limitations - see Documentation/CONTROL-PATHS-AND-MODALS.md)
 **Platform:** Windows (named pipes are Windows-specific)
 **Delphi Version:** RAD Studio 12 (Delphi 29.0)
 **License:** MPL-2.0 (Mozilla Public License 2.0)
 
 ## Known Limitations
 
-- **Modal Windows**: The framework currently blocks when modal forms (ShowModal) are displayed. This is a significant limitation for production use and is actively being worked on.
+**See `Documentation/CONTROL-PATHS-AND-MODALS.md` for complete details.**
+
+Summary of key limitations:
+- **SendInput Focus Requirement**: `ui_send_keys` requires the target application to have focus (user must click on app once before automation begins)
+- **ListBox Reading**: `TListBox` and `TListBoxMax` controls not yet supported by `ui_value_get` tool
+- **Control Path Resolution**: Path-based clicking needs debugging (e.g., `"edtFichero.#0"` - resolver integrated but not fully tested)
+- **Modal Edge Case**: One unidentified scenario caused server blocking (under investigation - most modal scenarios work correctly)
 - **Single Connection**: Named pipe supports single connection per pipe (no multi-connection support yet)
 - **Windows Only**: Named pipes are Windows-specific

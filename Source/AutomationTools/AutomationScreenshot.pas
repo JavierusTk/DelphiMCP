@@ -28,7 +28,7 @@ unit AutomationScreenshot;
 interface
 
 uses
-  System.SysUtils, System.Classes, System.Types, Vcl.Graphics, Vcl.Forms, Vcl.Imaging.PngImage,
+  System.SysUtils, System.Classes, Vcl.Graphics, Vcl.Forms, Vcl.Imaging.PngImage,
   Winapi.Windows, Winapi.Messages;
 
 type

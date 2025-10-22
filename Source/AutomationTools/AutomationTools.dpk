@@ -35,6 +35,14 @@ requires
   AutomationBridge;
 
 contains
-  AutomationCoreTools in 'AutomationCoreTools.pas';
+  AutomationCoreTools in 'AutomationCoreTools.pas',
+  AutomationScreenshot in 'AutomationScreenshot.pas',
+  AutomationTabulator in 'AutomationTabulator.pas',
+  AutomationFormIntrospection in 'AutomationFormIntrospection.pas',
+  AutomationInputSimulation in 'AutomationInputSimulation.pas',
+  AutomationControlInteraction in 'AutomationControlInteraction.pas',
+  TabOrderAnalyzer in 'TabOrderAnalyzer.pas',
+  AutomationDescribable in 'AutomationDescribable.pas',
+  AutomationWindowDetection in 'AutomationWindowDetection.pas';
 
 end.

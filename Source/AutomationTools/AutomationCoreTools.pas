@@ -13,13 +13,13 @@ unit AutomationCoreTools;
   - Tools are stateless and thread-safe (use TThread.Synchronize)
   - Each tool handler implements the TAutomationToolHandler signature
 
-  TOOLS REGISTERED (30 generic tools):
+  TOOLS REGISTERED (31 generic tools):
   - Utility (2): echo, list-tools
   - Visual Inspection (9): take-screenshot, get-form-info, list-open-forms,
     list-controls, find-control, get-control, ui.get_tree_diff, ui.focus.get,
     ui.value.get, ui.color.get
-  - Control Interaction (7): set-control-value, ui.set_text_verified, click-button,
-    select-combo-item, select-tab, close-form, set-focus
+  - Control Interaction (8): set-control-value, ui.set_text_verified, click-button,
+    select-combo-item, select-tab, close-form, set-focus, set-form-bounds
   - Keyboard/Mouse (5): ui.send_keys, ui.mouse_move, ui.mouse_click,
     ui.mouse_dblclick, ui.mouse_wheel
   - Synchronization (4): wait.idle, wait.focus, wait.text, wait.when
@@ -33,17 +33,19 @@ procedure RegisterCoreAutomationTools;
 implementation
 
 uses
-  Winapi.Windows,
+  Winapi.Windows, Winapi.Messages,
   System.SysUtils, System.Classes, System.JSON, System.DateUtils, System.NetEncoding,
   System.StrUtils,
-  Vcl.Forms, Vcl.Controls, Vcl.StdCtrls, Vcl.Graphics, Vcl.ExtCtrls,
+  Vcl.Forms, Vcl.Controls, Vcl.StdCtrls, Vcl.Graphics, Vcl.ExtCtrls, Vcl.Buttons,
   AutomationToolRegistry,
   AutomationScreenshot,
   AutomationFormIntrospection,
   AutomationControlInteraction,
   AutomationSynchronization,
   AutomationInputSimulation,
-  AutomationTabulator;
+  AutomationTabulator,
+  AutomationWindowDetection,
+  AutomationControlResolver;
 
 { Tool Handlers }
 
@@ -162,6 +164,8 @@ var
   Form: TForm;
   UseETag, MinimalMode, IncludeHwnd: Boolean;
   Depth: Integer;
+  ModalInfo: TNonVCLModalInfo;
+  ModalObj: TJSONObject;
 begin
   Result := TJSONObject.Create;
 
@@ -188,6 +192,36 @@ begin
   if (Params <> nil) and Params.TryGetValue<Boolean>('include_hwnd', IncludeHwnd) then
   else
     IncludeHwnd := False; // Default: exclude hwnd to save tokens
+
+  // Check if there's a non-VCL modal when requesting active form
+  if (FormName = 'active') and DetectNonVCLModal(ModalInfo) then
+  begin
+    // Return info about the non-VCL modal
+    ModalObj := TJSONObject.Create;
+    ModalObj.AddPair('name', Format('__NonVCL_%d', [ModalInfo.WindowHandle]));
+    ModalObj.AddPair('caption', ModalInfo.WindowTitle);
+    ModalObj.AddPair('class', ModalInfo.WindowClass);
+    ModalObj.AddPair('handle', TJSONNumber.Create(ModalInfo.WindowHandle));
+    ModalObj.AddPair('is_vcl_form', TJSONBool.Create(False));
+    ModalObj.AddPair('is_blocking_modal', TJSONBool.Create(True));
+    ModalObj.AddPair('limited_interaction', TJSONBool.Create(True));
+    ModalObj.AddPair('message', 'This is a non-VCL modal window (TOpenDialog, MessageDlg, etc.). Limited automation available.');
+    ModalObj.AddPair('available_actions', TJSONArray.Create
+      .Add('take-screenshot')
+      .Add('ui.send_keys (may not reach this window)')
+      .Add('close via Windows API (not yet implemented)'));
+    ModalObj.AddPair('unavailable_actions', TJSONArray.Create
+      .Add('get-form-info with controls')
+      .Add('list-controls')
+      .Add('find-control')
+      .Add('click-button')
+      .Add('set-control-value'));
+    if ModalInfo.OwnerHandle <> 0 then
+      ModalObj.AddPair('owner_handle', TJSONNumber.Create(ModalInfo.OwnerHandle));
+
+    Result.AddPair('form', ModalObj);
+    Exit;
+  end;
 
   // Always use ETag version now (supports all parameters)
   TThread.Synchronize(nil, procedure
@@ -391,6 +425,8 @@ procedure Tool_ClickButton(const Params: TJSONObject; out Result: TJSONObject);
 var
   FormName, ControlName: string;
   OpResult: TControlResult;
+  TargetForm: TForm;
+  ResolvedControl: TControl;
 begin
   Result := TJSONObject.Create;
 
@@ -403,9 +439,78 @@ begin
     Exit;
   end;
 
-  OpResult := AutomationControlInteraction.ClickButton(FormName, ControlName);
-  Result.AddPair('success', TJSONBool.Create(OpResult.Success));
-  Result.AddPair('message', OpResult.Message);
+  // If control name contains path notation (#N or .), resolve it first
+  if (Pos('.', ControlName) > 0) or (Pos('#', ControlName) > 0) then
+  begin
+    // Resolve the control path
+    TargetForm := AutomationFormIntrospection.FindForm(FormName);
+    if TargetForm = nil then
+    begin
+      Result.AddPair('success', TJSONBool.Create(False));
+      Result.AddPair('error', 'Form not found: ' + FormName);
+      Exit;
+    end;
+
+    ResolvedControl := AutomationControlResolver.ResolveControlPath(TargetForm, ControlName);
+    if ResolvedControl = nil then
+    begin
+      Result.AddPair('success', TJSONBool.Create(False));
+      Result.AddPair('error', 'Control path not found: ' + ControlName);
+      Exit;
+    end;
+
+    // Check if control is enabled and visible
+    if not ResolvedControl.Enabled then
+    begin
+      Result.AddPair('success', TJSONBool.Create(False));
+      Result.AddPair('error', 'Button is disabled: ' + ControlName);
+      Exit;
+    end;
+
+    if not ResolvedControl.Visible then
+    begin
+      Result.AddPair('success', TJSONBool.Create(False));
+      Result.AddPair('error', 'Button is not visible: ' + ControlName);
+      Exit;
+    end;
+
+    // Click based on control type
+    try
+      if ResolvedControl is TButton then
+        TButton(ResolvedControl).Click
+      else if ResolvedControl is TBitBtn then
+        TBitBtn(ResolvedControl).Click
+      else if ResolvedControl is TSpeedButton then
+        TSpeedButton(ResolvedControl).Click
+      else if ResolvedControl is TCheckBox then
+        SendMessage(TWinControl(ResolvedControl).Handle, BM_CLICK, 0, 0)
+      else if ResolvedControl is TRadioButton then
+        SendMessage(TWinControl(ResolvedControl).Handle, BM_CLICK, 0, 0)
+      else
+      begin
+        Result.AddPair('success', TJSONBool.Create(False));
+        Result.AddPair('error', 'Control is not clickable: ' + ResolvedControl.ClassName);
+        Exit;
+      end;
+
+      Result.AddPair('success', TJSONBool.Create(True));
+      Result.AddPair('message', 'Button clicked');
+      Result.AddPair('resolved_path', ControlName);
+    except
+      on E: Exception do
+      begin
+        Result.AddPair('success', TJSONBool.Create(False));
+        Result.AddPair('error', 'Error clicking control: ' + E.Message);
+      end;
+    end;
+  end
+  else
+  begin
+    // Use original name-based lookup
+    OpResult := AutomationControlInteraction.ClickButton(FormName, ControlName);
+    Result.AddPair('success', TJSONBool.Create(OpResult.Success));
+    Result.AddPair('message', OpResult.Message);
+  end;
 end;
 
 procedure Tool_SelectComboItem(const Params: TJSONObject; out Result: TJSONObject);
@@ -503,6 +608,125 @@ begin
   OpResult := AutomationControlInteraction.SetFocus(FormName, ControlName);
   Result.AddPair('success', TJSONBool.Create(OpResult.Success));
   Result.AddPair('message', OpResult.Message);
+end;
+
+procedure Tool_SetFormBounds(const Params: TJSONObject; out Result: TJSONObject);
+var
+  FormName: string;
+  Form: TForm;
+  X, Y, Width, Height: Integer;
+  HasX, HasY, HasWidth, HasHeight: Boolean;
+  Changes: TStringList;
+begin
+  Result := TJSONObject.Create;
+  Changes := TStringList.Create;
+  try
+    // Get form parameter (required)
+    if (Params = nil) or not Params.TryGetValue<string>('form', FormName) then
+    begin
+      Result.AddPair('success', TJSONBool.Create(False));
+      Result.AddPair('error', 'Missing required parameter: form');
+      Exit;
+    end;
+
+    // Find the form
+    Form := AutomationControlInteraction.FindFormByName(FormName);
+    if Form = nil then
+    begin
+      Result.AddPair('success', TJSONBool.Create(False));
+      Result.AddPair('error', 'Form not found: ' + FormName);
+      Exit;
+    end;
+
+    // Get optional parameters
+    HasX := Params.TryGetValue<Integer>('x', X);
+    HasY := Params.TryGetValue<Integer>('y', Y);
+    HasWidth := Params.TryGetValue<Integer>('width', Width);
+    HasHeight := Params.TryGetValue<Integer>('height', Height);
+
+    // Check if at least one parameter was provided
+    if not (HasX or HasY or HasWidth or HasHeight) then
+    begin
+      Result.AddPair('success', TJSONBool.Create(False));
+      Result.AddPair('error', 'At least one of x, y, width, or height must be provided');
+      Exit;
+    end;
+
+    // Apply changes (must be done in main thread)
+    TThread.Synchronize(nil, procedure
+    begin
+      if HasX then
+      begin
+        Form.Left := X;
+        Changes.Add(Format('Left=%d', [X]));
+      end;
+      if HasY then
+      begin
+        Form.Top := Y;
+        Changes.Add(Format('Top=%d', [Y]));
+      end;
+      if HasWidth then
+      begin
+        Form.Width := Width;
+        Changes.Add(Format('Width=%d', [Width]));
+      end;
+      if HasHeight then
+      begin
+        Form.Height := Height;
+        Changes.Add(Format('Height=%d', [Height]));
+      end;
+    end);
+
+    // Return success with details
+    Result.AddPair('success', TJSONBool.Create(True));
+    Result.AddPair('form', FormName);
+    Result.AddPair('changes', Changes.CommaText);
+    Result.AddPair('bounds', TJSONObject.Create
+      .AddPair('left', Form.Left)
+      .AddPair('top', Form.Top)
+      .AddPair('width', Form.Width)
+      .AddPair('height', Form.Height));
+
+  finally
+    Changes.Free;
+  end;
+end;
+
+procedure Tool_DebugListAllWindows(const Params: TJSONObject; out Result: TJSONObject);
+var
+  WindowsJSON: string;
+  WindowsArray: TJSONValue;
+begin
+  Result := TJSONObject.Create;
+  WindowsJSON := AutomationWindowDetection.ListNonVCLWindows;
+  WindowsArray := TJSONObject.ParseJSONValue(WindowsJSON);
+  if WindowsArray <> nil then
+    Result.AddPair('windows', WindowsArray)
+  else
+    Result.AddPair('error', 'Failed to parse windows list');
+end;
+
+procedure Tool_CloseNonVCLModal(const Params: TJSONObject; out Result: TJSONObject);
+var
+  WindowHandle: Integer;
+  Success: Boolean;
+begin
+  Result := TJSONObject.Create;
+
+  if not Params.TryGetValue<Integer>('handle', WindowHandle) then
+  begin
+    Result.AddPair('success', TJSONBool.Create(False));
+    Result.AddPair('error', 'Missing required parameter: handle');
+    Exit;
+  end;
+
+  Success := AutomationWindowDetection.CloseNonVCLModal(HWND(WindowHandle));
+
+  Result.AddPair('success', TJSONBool.Create(Success));
+  if Success then
+    Result.AddPair('message', 'WM_CLOSE message sent to window')
+  else
+    Result.AddPair('message', 'Failed to send WM_CLOSE message');
 end;
 
 procedure Tool_ListTools(const Params: TJSONObject; out Result: TJSONObject);
@@ -639,6 +863,76 @@ begin
       Result.AddPair('success', TJSONBool.Create(True));
       Result.AddPair('hwnd', TJSONNumber.Create(FocusedHWND));
       Result.AddPair('message', 'Focused window not a VCL control');
+    end;
+  end
+  else
+  begin
+    Result.AddPair('success', TJSONBool.Create(False));
+    Result.AddPair('message', 'No focused window');
+  end;
+end;
+
+procedure Tool_GetFocusedPath(const Params: TJSONObject; out Result: TJSONObject);
+var
+  FocusedHWND: HWND;
+  FocusedControl: TControl;
+  OwnerForm: TForm;
+  ParentForm: TCustomForm;
+  ControlPath: string;
+  gui: TGUIThreadInfo;
+begin
+  Result := TJSONObject.Create;
+
+  // Get focused window handle
+  FillChar(gui, SizeOf(gui), 0);
+  gui.cbSize := SizeOf(gui);
+
+  if GetGUIThreadInfo(0, gui) then
+    FocusedHWND := gui.hwndFocus
+  else
+    FocusedHWND := 0;
+
+  if FocusedHWND <> 0 then
+  begin
+    TThread.Synchronize(nil, procedure
+    begin
+      FocusedControl := FindControl(FocusedHWND);
+    end);
+
+    if FocusedControl <> nil then
+    begin
+      // Find the owner form
+      OwnerForm := nil;
+      TThread.Synchronize(nil, procedure
+      begin
+        ParentForm := GetParentForm(FocusedControl);
+        if ParentForm is TForm then
+          OwnerForm := TForm(ParentForm);
+      end);
+
+      if OwnerForm <> nil then
+      begin
+        // Get the control path
+        ControlPath := AutomationControlResolver.GetControlPath(OwnerForm, FocusedControl);
+
+        Result.AddPair('success', TJSONBool.Create(True));
+        Result.AddPair('form', OwnerForm.Name);
+        Result.AddPair('path', ControlPath);
+        Result.AddPair('control_name', FocusedControl.Name);
+        Result.AddPair('control_class', FocusedControl.ClassName);
+        Result.AddPair('hwnd', TJSONNumber.Create(FocusedHWND));
+      end
+      else
+      begin
+        Result.AddPair('success', TJSONBool.Create(False));
+        Result.AddPair('message', 'Could not find owner form for focused control');
+      end;
+    end
+    else
+    begin
+      Result.AddPair('success', TJSONBool.Create(False));
+      Result.AddPair('message', 'Focused window not a VCL control');
+      Result.AddPair('hwnd', TJSONNumber.Create(FocusedHWND));
     end;
   end
   else
@@ -1241,6 +1535,38 @@ begin
   Result.AddPair('required', TJSONArray.Create.Add('form').Add('control'));
 end;
 
+function CreateSchema_SetFormBounds: TJSONObject;
+var
+  Props: TJSONObject;
+begin
+  Result := TJSONObject.Create;
+  Result.AddPair('type', 'object');
+  Props := TJSONObject.Create;
+
+  Props.AddPair('form', TJSONObject.Create
+    .AddPair('type', 'string')
+    .AddPair('description', 'Form name to resize/move (or "active" for active form)'));
+
+  Props.AddPair('x', TJSONObject.Create
+    .AddPair('type', 'number')
+    .AddPair('description', 'New X position (Left property). Leave empty to keep unchanged'));
+
+  Props.AddPair('y', TJSONObject.Create
+    .AddPair('type', 'number')
+    .AddPair('description', 'New Y position (Top property). Leave empty to keep unchanged'));
+
+  Props.AddPair('width', TJSONObject.Create
+    .AddPair('type', 'number')
+    .AddPair('description', 'New width in pixels. Leave empty to keep unchanged'));
+
+  Props.AddPair('height', TJSONObject.Create
+    .AddPair('type', 'number')
+    .AddPair('description', 'New height in pixels. Leave empty to keep unchanged'));
+
+  Result.AddPair('properties', Props);
+  Result.AddPair('required', TJSONArray.Create.Add('form'));
+end;
+
 { Wait/Synchronization Tool Schemas }
 
 function CreateSchema_WaitIdle: TJSONObject;
@@ -1593,6 +1919,10 @@ begin
     'Get currently focused control', 'visual', 'core',
     CreateSchema_UIFocusGet);
 
+  Registry.RegisterTool('ui.focus.get_path', Tool_GetFocusedPath,
+    'Get path to currently focused control (e.g., "edtFichero.#0")', 'visual', 'core',
+    nil); // No parameters needed
+
   // Control interaction tools
   Registry.RegisterTool('set-control-value', Tool_SetControlValue,
     'Set value in Edit/Memo/CheckBox/ComboBox controls', 'interaction', 'core',
@@ -1621,6 +1951,12 @@ begin
     'Set focus to control', 'interaction', 'core',
     CreateSchema_SetFocus);
   Registry.RegisterAlias('focus', 'set-focus');
+
+  Registry.RegisterTool('set-form-bounds', Tool_SetFormBounds,
+    'Move and/or resize form (x, y, width, height - all optional)', 'interaction', 'core',
+    CreateSchema_SetFormBounds);
+  Registry.RegisterAlias('move-form', 'set-form-bounds');
+  Registry.RegisterAlias('resize-form', 'set-form-bounds');
 
   // Wait/synchronization tools
   Registry.RegisterTool('wait.idle', Tool_WaitIdle,
@@ -1683,7 +2019,17 @@ begin
   // Development tools (Tabulator)
   RegisterTabulatorAutomationTools;
 
-  OutputDebugString('Automation.Core: Registered 30 core generic tools with 16 aliases (including Tabulator, keyboard/mouse)');
+  // Debug tools
+  Registry.RegisterTool('debug-list-all-windows', Tool_DebugListAllWindows,
+    'DEBUG: List all non-VCL windows with owners', 'debug', 'core',
+    nil);
+
+  // Non-VCL modal interaction
+  Registry.RegisterTool('close-nonvcl-modal', Tool_CloseNonVCLModal,
+    'Close a non-VCL modal window (TOpenDialog, MessageDlg, etc.) by sending WM_CLOSE', 'interaction', 'core',
+    nil);  // TODO: Add schema
+
+  OutputDebugString('Automation.Core: Registered 34 core generic tools with 18 aliases (including Tabulator, keyboard/mouse, debug, non-VCL modal, control paths)');
 end;
 
 end.

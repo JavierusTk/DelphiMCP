@@ -68,6 +68,15 @@ type
     LogLevel: TLogLevel;
 
     /// <summary>
+    /// Enable modal-safe execution using AutomationBroker
+    /// </summary>
+    /// <remarks>
+    /// Default: False (use TThread.Synchronize - faster, blocks on modals)
+    /// Set to True for modal window support (uses PostMessage - slightly slower)
+    /// </remarks>
+    EnableModalSupport: Boolean;
+
+    /// <summary>
     /// Creates default configuration
     /// </summary>
     class function Default: TAutomationConfig; static;
@@ -130,6 +139,7 @@ begin
   Result.Timeout := DEFAULT_TIMEOUT;
   Result.RateLimitRPS := DEFAULT_RATE_LIMIT;
   Result.LogLevel := DEFAULT_LOG_LEVEL;
+  Result.EnableModalSupport := False;  // Backward compatible, better performance
 end;
 
 class function TAutomationConfig.Debug: TAutomationConfig;
@@ -138,6 +148,7 @@ begin
   Result.Timeout := DEBUG_TIMEOUT;
   Result.RateLimitRPS := DEBUG_RATE_LIMIT;
   Result.LogLevel := llDebug;
+  Result.EnableModalSupport := True;  // Helpful for debugging with modal dialogs
 end;
 
 class function TAutomationConfig.Production: TAutomationConfig;
@@ -146,6 +157,7 @@ begin
   Result.Timeout := DEFAULT_TIMEOUT;
   Result.RateLimitRPS := DEFAULT_RATE_LIMIT;
   Result.LogLevel := llInfo;
+  Result.EnableModalSupport := False;  // Performance over modal support in production
 end;
 
 function TAutomationConfig.IsValid: Boolean;
