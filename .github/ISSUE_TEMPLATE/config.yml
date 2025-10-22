@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Documentation
+    url: https://github.com/JavierusTk/DelphiMCP/tree/main/Documentation
+    about: Check the comprehensive documentation for guides and references
+  - name: Model Context Protocol
+    url: https://modelcontextprotocol.io/
+    about: Learn more about the Model Context Protocol specification
+  - name: Delphi-MCP-Server
+    url: https://github.com/GDKsoftware/delphi-mcp-server
+    about: The HTTP/MCP protocol dependency for this framework
