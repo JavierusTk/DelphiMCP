@@ -484,6 +484,8 @@ This framework is being developed alongside the **CyberMAX ERP** system, demonst
 **Essential Reading:**
 - `README.md` - Quick start and overview
 - `Documentation/ARCHITECTURE.md` - Complete architecture details
+- `Documentation/CONTROL-PATHS-AND-MODALS.md` - **NEW v2.2**: Modal support and control paths
+- `Documentation/NEXT-STEPS.md` - **Development roadmap and priorities**
 - `Documentation/DYNAMIC-PROXY.md` - Dynamic discovery system (important!)
 - `Documentation/DEBUG-CAPTURE.md` - Debug capture system
 - `Documentation/SETUP-GUIDE.md` - Configuration and setup
