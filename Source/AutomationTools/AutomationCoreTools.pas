@@ -827,6 +827,8 @@ var
   FocusedHWND: HWND;
   FocusedControl: TWinControl;
   gui: TGUIThreadInfo;
+  ClassName: array[0..255] of Char;
+  WindowText: array[0..1023] of Char;
 begin
   Result := TJSONObject.Create;
 
@@ -848,7 +850,9 @@ begin
 
     if FocusedControl <> nil then
     begin
+      // VCL control
       Result.AddPair('success', TJSONBool.Create(True));
+      Result.AddPair('type', 'vcl');
       Result.AddPair('hwnd', TJSONNumber.Create(FocusedHWND));
       Result.AddPair('name', FocusedControl.Name);
       Result.AddPair('class', FocusedControl.ClassName);
@@ -860,9 +864,23 @@ begin
     end
     else
     begin
+      // Non-VCL Windows control
       Result.AddPair('success', TJSONBool.Create(True));
+      Result.AddPair('type', 'windows');
       Result.AddPair('hwnd', TJSONNumber.Create(FocusedHWND));
-      Result.AddPair('message', 'Focused window not a VCL control');
+      Result.AddPair('name', '');
+
+      // Get Windows class name
+      if GetClassName(FocusedHWND, ClassName, Length(ClassName)) > 0 then
+        Result.AddPair('class', string(ClassName))
+      else
+        Result.AddPair('class', '');
+
+      // Get window text/caption
+      if GetWindowText(FocusedHWND, WindowText, Length(WindowText)) > 0 then
+        Result.AddPair('caption', string(WindowText))
+      else
+        Result.AddPair('caption', '');
     end;
   end
   else

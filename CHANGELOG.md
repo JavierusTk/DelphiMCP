@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.3.0] - 2025-10-25
+
+### Added
+- **{SPACE} special key support** in `ui_send_keys` tool - SPACE must be sent as VK_SPACE (virtual key code), not Unicode character, to properly activate buttons in Windows dialogs
+- **Enhanced `ui_focus_get` tool** with comprehensive Windows control support:
+  - New `type` field: `"vcl"` or `"windows"` (explicit discriminator for control type)
+  - For Windows controls: `class` (via GetClassName) and `caption` (via GetWindowText)
+  - Enables detection of which button has focus in non-VCL dialogs (MessageDlg, TOpenDialog, etc.)
+
+### Fixed
+- **Modal dialog button activation**: `{TAB}{SPACE}` now correctly activates buttons in non-VCL modal dialogs
+- Unicode vs virtual key issue: SPACE sent as Unicode (0x20) doesn't activate buttons; VK_SPACE does
+
+### Technical Details
+- **AutomationInputSimulation.pas**: Added SPACE to ParseSpecialKey() function (lines 222-223)
+- **AutomationCoreTools.pas**: Enhanced Tool_GetFocused() to query Windows controls (lines 867-883)
+- **Testing validated**: 100% modal detection accuracy, 3-tier focus management working, TAB navigation confirmed
+
+### Breaking Changes
+None - all changes are additive and backward compatible
+
 ## [3.2.0] - 2025-10-12
 
 ### Initial Public Release

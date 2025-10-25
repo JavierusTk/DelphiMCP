@@ -23,7 +23,9 @@ uses
   System.Types,
   System.SysUtils,
   System.Math,
-  System.JSON;
+  System.JSON,
+  Vcl.Forms,
+  AutomationWindowDetection;
 
 // Tool implementations (called from MCPCoreTools)
 procedure Tool_SendKeys(const Params: TJSONObject; out Result: TJSONObject);
@@ -217,6 +219,8 @@ begin
     Result := VK_TAB
   else if SameText(KeyName, 'ESC') or SameText(KeyName, 'ESCAPE') then
     Result := VK_ESCAPE
+  else if SameText(KeyName, 'SPACE') then
+    Result := VK_SPACE
   else if SameText(KeyName, 'BACKSPACE') or SameText(KeyName, 'BACK') then
     Result := VK_BACK
   else if SameText(KeyName, 'DELETE') or SameText(KeyName, 'DEL') then
@@ -291,6 +295,157 @@ begin
 end;
 
 // ============================================================================
+// Focus Management (3-Tier Approach for Windows 11 Compatibility)
+// ============================================================================
+
+type
+  TFocusMethod = (fmAlreadyForeground, fmSimple, fmAttachThread, fmAltKey, fmFailed);
+
+function TrySimpleSetForeground(TargetHWND: HWND): Boolean;
+begin
+  Result := SetForegroundWindow(TargetHWND);
+  if Result then
+    Sleep(50); // Give window time to process
+end;
+
+function TryAttachThreadInput(TargetHWND: HWND): Boolean;
+var
+  ForegroundWnd: HWND;
+  ForegroundThread, TargetThread: DWORD;
+begin
+  Result := False;
+
+  ForegroundWnd := GetForegroundWindow;
+  if ForegroundWnd = 0 then Exit;
+
+  ForegroundThread := GetWindowThreadProcessId(ForegroundWnd, nil);
+  TargetThread := GetWindowThreadProcessId(TargetHWND, nil);
+
+  // If same thread, don't need to attach
+  if ForegroundThread = TargetThread then Exit;
+
+  // Attach input queues
+  if AttachThreadInput(ForegroundThread, TargetThread, True) then
+  try
+    BringWindowToTop(TargetHWND);
+    Result := SetForegroundWindow(TargetHWND);
+    if Result then
+      Sleep(100);
+  finally
+    AttachThreadInput(ForegroundThread, TargetThread, False);
+  end;
+end;
+
+function TryAltKeyActivation(TargetHWND: HWND): Boolean;
+var
+  AltDown, AltUp: TInput;
+begin
+  // Windows 11 trick: Pressing Alt grants foreground permission temporarily
+  ZeroMemory(@AltDown, SizeOf(TInput));
+  AltDown.Itype := INPUT_KEYBOARD;
+  AltDown.ki.wVk := VK_MENU; // Alt key
+  AltDown.ki.dwFlags := 0;
+
+  ZeroMemory(@AltUp, SizeOf(TInput));
+  AltUp.Itype := INPUT_KEYBOARD;
+  AltUp.ki.wVk := VK_MENU;
+  AltUp.ki.dwFlags := KEYEVENTF_KEYUP;
+
+  // Send Alt down
+  SendInput(1, @AltDown, SizeOf(TInput));
+  Sleep(10);
+
+  // Try to activate window
+  Result := SetForegroundWindow(TargetHWND);
+  Sleep(50);
+
+  // Send Alt up
+  SendInput(1, @AltUp, SizeOf(TInput));
+
+  if Result then
+    Sleep(50);
+end;
+
+procedure FlashWindowToGetAttention(TargetHWND: HWND);
+var
+  FlashInfo: FLASHWINFO;
+begin
+  ZeroMemory(@FlashInfo, SizeOf(FLASHWINFO));
+  FlashInfo.cbSize := SizeOf(FLASHWINFO);
+  FlashInfo.hwnd := TargetHWND;
+  FlashInfo.dwFlags := FLASHW_ALL or FLASHW_TIMERNOFG;
+  FlashInfo.uCount := 5; // Flash 5 times
+  FlashInfo.dwTimeout := 0; // Default rate
+
+  FlashWindowEx(FlashInfo);
+end;
+
+function SetForegroundWindowReliably(TargetHWND: HWND; out Method: TFocusMethod): Boolean;
+var
+  ForegroundWnd: HWND;
+begin
+  Result := False;
+  Method := fmFailed;
+
+  // Validate handle
+  if (TargetHWND = 0) or not IsWindow(TargetHWND) then Exit;
+
+  // Tier 0: Check if already foreground
+  ForegroundWnd := GetForegroundWindow;
+  if ForegroundWnd = TargetHWND then
+  begin
+    Result := True;
+    Method := fmAlreadyForeground;
+    Exit;
+  end;
+
+  // Tier 1: Try simple SetForegroundWindow
+  if TrySimpleSetForeground(TargetHWND) then
+  begin
+    Result := True;
+    Method := fmSimple;
+    OutputDebugString(PChar(Format('Focus: Simple SetForegroundWindow succeeded (HWND=%d)', [TargetHWND])));
+    Exit;
+  end;
+
+  // Tier 2: Try AttachThreadInput
+  if TryAttachThreadInput(TargetHWND) then
+  begin
+    Result := True;
+    Method := fmAttachThread;
+    OutputDebugString(PChar(Format('Focus: AttachThreadInput succeeded (HWND=%d)', [TargetHWND])));
+    Exit;
+  end;
+
+  // Tier 3: Try Alt key simulation (Windows 11 workaround)
+  if TryAltKeyActivation(TargetHWND) then
+  begin
+    Result := True;
+    Method := fmAltKey;
+    OutputDebugString(PChar(Format('Focus: Alt key simulation succeeded (HWND=%d)', [TargetHWND])));
+    Exit;
+  end;
+
+  // All tiers failed - flash window and return failure
+  FlashWindowToGetAttention(TargetHWND);
+  Method := fmFailed;
+  OutputDebugString(PChar(Format('Focus: All methods failed (HWND=%d) - window flashing', [TargetHWND])));
+end;
+
+function FocusMethodToString(Method: TFocusMethod): string;
+begin
+  case Method of
+    fmAlreadyForeground: Result := 'already_foreground';
+    fmSimple: Result := 'simple';
+    fmAttachThread: Result := 'attach_thread';
+    fmAltKey: Result := 'alt_key';
+    fmFailed: Result := 'failed';
+  else
+    Result := 'unknown';
+  end;
+end;
+
+// ============================================================================
 // MCP Tool Implementations
 // ============================================================================
 
@@ -298,8 +453,8 @@ procedure Tool_SendKeys(const Params: TJSONObject; out Result: TJSONObject);
 var
   Keys: string;
   TargetHandle: Integer;
-  PrevForeground: HWND;
-  FocusSet: Boolean;
+  FocusMethod: TFocusMethod;
+  FocusSuccess: Boolean;
 begin
   Result := TJSONObject.Create;
   try
@@ -313,56 +468,112 @@ begin
     // Optional: target a specific window by handle
     if Params.TryGetValue<Integer>('target_handle', TargetHandle) and (TargetHandle <> 0) then
     begin
-      // Check if target window is already foreground
-      PrevForeground := GetForegroundWindow;
+      // Use 3-tier focus management approach
+      FocusSuccess := SetForegroundWindowReliably(HWND(TargetHandle), FocusMethod);
 
-      if PrevForeground = HWND(TargetHandle) then
+      if FocusSuccess then
       begin
-        // Target is already foreground - just send keys directly
+        // Send keys
         SendKeysSequence(Keys);
+
         Result.AddPair('success', TJSONBool.Create(True));
         Result.AddPair('keys_sent', Keys);
         Result.AddPair('targeted_window', TJSONNumber.Create(TargetHandle));
-        Result.AddPair('was_already_foreground', TJSONBool.Create(True));
-        OutputDebugString(PChar(Format('MCP.SendKeys: Sent keys to foreground window %d - %s', [TargetHandle, Keys])));
+        Result.AddPair('focus_method', FocusMethodToString(FocusMethod));
+
+        OutputDebugString(PChar(Format('MCP.SendKeys: Sent keys to window %d via %s - %s',
+          [TargetHandle, FocusMethodToString(FocusMethod), Keys])));
       end
       else
       begin
-        // Try to set focus to target window
-        FocusSet := SetForegroundWindow(HWND(TargetHandle));
+        // Focus failed - provide helpful error message
+        Result.AddPair('success', TJSONBool.Create(False));
+        Result.AddPair('error', Format(
+          'Could not bring window %d to foreground automatically. ' +
+          'Windows security prevents focus stealing. ' +
+          'Please click on the application window (now flashing in taskbar), then retry. ' +
+          'This is a one-time action - once the app has focus, automation will continue.', [TargetHandle]));
+        Result.AddPair('focus_method', 'failed');
+        Result.AddPair('workaround', 'Click on the application window to give it focus, then retry the operation');
+        Result.AddPair('window_flashing', TJSONBool.Create(True));
 
-        if FocusSet then
-        begin
-          // Give window time to process focus change
-          Sleep(100);
-
-          // Send keys
-          SendKeysSequence(Keys);
-
-          // Restore previous foreground window
-          if PrevForeground <> 0 then
-            SetForegroundWindow(PrevForeground);
-
-          Result.AddPair('success', TJSONBool.Create(True));
-          Result.AddPair('keys_sent', Keys);
-          Result.AddPair('targeted_window', TJSONNumber.Create(TargetHandle));
-          Result.AddPair('was_already_foreground', TJSONBool.Create(False));
-          OutputDebugString(PChar(Format('MCP.SendKeys: Sent keys to window %d - %s', [TargetHandle, Keys])));
-        end
-        else
-        begin
-          Result.AddPair('success', TJSONBool.Create(False));
-          Result.AddPair('error', Format('Failed to set focus to window handle %d (use target_handle only if window is already foreground)', [TargetHandle]));
-        end;
+        OutputDebugString(PChar(Format('MCP.SendKeys: Focus failed for window %d - user action required', [TargetHandle])));
       end;
     end
     else
     begin
-      // No target specified - send to current foreground window
-      SendKeysSequence(Keys);
-      Result.AddPair('success', TJSONBool.Create(True));
-      Result.AddPair('keys_sent', Keys);
-      OutputDebugString(PChar('MCP.SendKeys: Sent keys - ' + Keys));
+      // No target specified - detect truly active window
+      // Priority: Non-VCL modal > VCL active form > Current foreground
+      var ModalInfo: TNonVCLModalInfo;
+      var ActiveHandle: HWND;
+      var DetectionSource: string;
+
+      // Note: ActiveHandle is always set by one of the branches below (no initial value needed)
+      DetectionSource := 'none';
+
+      if DetectNonVCLModal(ModalInfo) then
+      begin
+        // Non-VCL modal detected (OpenDialog, MessageBox, etc.)
+        ActiveHandle := ModalInfo.WindowHandle;
+        DetectionSource := 'non_vcl_modal';
+        OutputDebugString(PChar(Format('MCP.SendKeys: Detected non-VCL modal: %s (HWND=%d)',
+          [ModalInfo.WindowTitle, ActiveHandle])));
+      end
+      else if (Screen.ActiveForm <> nil) then
+      begin
+        // VCL active form
+        ActiveHandle := Screen.ActiveForm.Handle;
+        DetectionSource := 'vcl_active_form';
+        OutputDebugString(PChar(Format('MCP.SendKeys: Detected VCL active form: %s (HWND=%d)',
+          [Screen.ActiveForm.Name, ActiveHandle])));
+      end
+      else
+      begin
+        // Fallback to current foreground
+        ActiveHandle := GetForegroundWindow;
+        DetectionSource := 'foreground_fallback';
+        OutputDebugString(PChar(Format('MCP.SendKeys: Using foreground window (HWND=%d)',
+          [ActiveHandle])));
+      end;
+
+      if ActiveHandle <> 0 then
+      begin
+        // Use focus management to activate detected window
+        FocusSuccess := SetForegroundWindowReliably(ActiveHandle, FocusMethod);
+
+        if FocusSuccess then
+        begin
+          SendKeysSequence(Keys);
+          Result.AddPair('success', TJSONBool.Create(True));
+          Result.AddPair('keys_sent', Keys);
+          Result.AddPair('auto_detected_target', TJSONNumber.Create(ActiveHandle));
+          Result.AddPair('detection_source', DetectionSource);
+          Result.AddPair('focus_method', FocusMethodToString(FocusMethod));
+          OutputDebugString(PChar(Format('MCP.SendKeys: Sent keys to auto-detected window %d - %s',
+            [ActiveHandle, Keys])));
+        end
+        else
+        begin
+          // Focus failed (rare for "active" window, but possible)
+          Result.AddPair('success', TJSONBool.Create(False));
+          Result.AddPair('error', Format('Could not activate detected active window %d', [ActiveHandle]));
+          Result.AddPair('auto_detected_target', TJSONNumber.Create(ActiveHandle));
+          Result.AddPair('detection_source', DetectionSource);
+          Result.AddPair('focus_method', 'failed');
+          OutputDebugString(PChar(Format('MCP.SendKeys: Failed to activate auto-detected window %d',
+            [ActiveHandle])));
+        end;
+      end
+      else
+      begin
+        // No window detected at all - last resort fallback
+        SendKeysSequence(Keys);
+        Result.AddPair('success', TJSONBool.Create(True));
+        Result.AddPair('keys_sent', Keys);
+        Result.AddPair('focus_method', 'not_applicable');
+        Result.AddPair('detection_source', 'none_detected');
+        OutputDebugString(PChar('MCP.SendKeys: No window detected, sent to foreground - ' + Keys));
+      end;
     end;
   except
     on E: Exception do

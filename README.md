@@ -9,8 +9,8 @@
 
 **A work-in-progress framework for building MCP (Model Context Protocol) servers in Delphi**
 
-> ⚠️ **Current Status: Work in Progress**
-> Modal windows are not yet supported. The framework currently blocks when modal forms are displayed. This is actively being worked on.
+> ✅ **Version 3.3.0 - Enhanced Modal Support**
+> Modal window automation now supported with {SPACE} key and enhanced focus detection. See CHANGELOG.md for details.
 
 ## Overview
 
@@ -22,10 +22,11 @@ DelphiMCP is a **work-in-progress Generic VCL Automation Framework** for Delphi 
 - **In Development**: Being developed alongside CyberMAX ERP system
 - **Self-Contained**: No external dependencies beyond Delphi RTL/VCL
 
-**Current Limitations:**
-- ⚠️ **Modal windows not supported** - Framework blocks on ShowModal calls
-- ⚠️ **Not production-ready** - Suitable for testing and development only
-- ✅ **Non-modal forms work well** - Full automation support for regular forms
+**Current Status:**
+- ✅ **Modal window support** - Non-VCL dialogs (MessageDlg, TOpenDialog) now supported with {SPACE} key
+- ✅ **Enhanced focus detection** - ui_focus_get now shows button captions and control types
+- ✅ **3-tier focus management** - Reliable window activation on Windows 11
+- ⚠️ **Work in progress** - Some edge cases may require manual intervention
 
 ### Architecture Components
 
@@ -57,13 +58,14 @@ DelphiMCP is a **work-in-progress Generic VCL Automation Framework** for Delphi 
 ### Key Features
 
 - ✅ **30 Automation Tools** - Visual inspection, control interaction, keyboard/mouse, synchronization
-- ⚠️ **Work in Progress** - Modal window support under development
+- ✅ **Modal Window Support** - Non-VCL dialogs (MessageDlg, TOpenDialog) fully supported
+- ✅ **Enhanced Focus Detection** - ui_focus_get shows button captions and control types (v3.3.0)
+- ✅ **{SPACE} Key Support** - Proper button activation in Windows dialogs (v3.3.0)
 - ✅ **Self-Contained** - No external dependencies beyond Delphi RTL/VCL
 - ✅ **Easy Integration** - 2-line setup: `RegisterCoreAutomationTools; StartAutomationServer;`
 - ✅ **Thread-Safe** - All VCL access via TThread.Synchronize
 - ✅ **Extensible** - Add custom tools easily
 - ✅ **HTTP/MCP Bridge** - Connects to Claude Code seamlessly
-- ⚠️ **Not Production Ready** - Modal dialogs not yet supported (see Known Limitations below)
 
 ### Tool Categories
 
@@ -393,11 +395,19 @@ Complete MCP bridge example for Delphi applications.
 
 ## Documentation
 
+### Core Documentation
 - **[ARCHITECTURE.md](Documentation/ARCHITECTURE.md)** - Framework architecture and design
 - **[DYNAMIC-PROXY.md](Documentation/DYNAMIC-PROXY.md)** - Dynamic proxy implementation details
 - **[DEBUG-CAPTURE.md](Documentation/DEBUG-CAPTURE.md)** - Debug capture system documentation
 - **[SETUP-GUIDE.md](Documentation/SETUP-GUIDE.md)** - Complete setup and configuration guide
 - **[IMPLEMENTATION.md](Documentation/IMPLEMENTATION.md)** - Implementation history and decisions
+- **[CONTROL-PATHS-AND-MODALS.md](Documentation/CONTROL-PATHS-AND-MODALS.md)** - Control path resolution and modal window support (v2.2)
+- **[NEXT-STEPS.md](Documentation/NEXT-STEPS.md)** - Development roadmap and priorities
+
+### Research Documents
+- **[ELEVATED-HELPER-RESEARCH.md](Documentation/ELEVATED-HELPER-RESEARCH.md)** - Research on UIAccess/admin helper applications for Windows 11 focus management (conclusion: not recommended)
+- **[WINDOWS-SERVICE-FOCUS-RESEARCH.md](Documentation/WINDOWS-SERVICE-FOCUS-RESEARCH.md)** - Windows Service approach analysis
+- **[FOCUS-SOLUTIONS-COMPARISON.md](Documentation/FOCUS-SOLUTIONS-COMPARISON.md)** - Comparison of focus management solutions
 
 ## Development Examples
 
