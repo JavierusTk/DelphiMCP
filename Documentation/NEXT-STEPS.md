@@ -1,7 +1,28 @@
 # Next Steps for DelphiMCP Development
 
-**Last Updated:** 2025-10-22 (Post v2.2)
-**Current Version:** v2.2 (Modal support + Control paths)
+**Last Updated:** 2025-10-25 (Post v3.3.0)
+**Current Version:** v3.3.0 (Enhanced focus detection + {SPACE} key support)
+
+## ✅ Completed in v3.3.0 (2025-10-25)
+
+**What Was Done:**
+1. **Added {SPACE} special key support** - SPACE must be sent as VK_SPACE (virtual key), not Unicode, to activate buttons in Windows dialogs
+2. **Enhanced ui_focus_get tool** - Now returns:
+   - `type` field: `"vcl"` or `"windows"` (explicit discriminator)
+   - For Windows controls: `class` (via GetClassName) and `caption` (via GetWindowText)
+   - Enables detection of which button has focus in non-VCL dialogs
+
+**Key Finding:**
+- Modal dialog automation works perfectly: `{TAB}{SPACE}` successfully activates buttons
+- Unicode SPACE (` `) doesn't work - must use `{SPACE}` (VK_SPACE) virtual key
+- Focus management (3-tier) validated and working
+- Modal detection: 100% accuracy
+
+**Impact:** Non-VCL modal dialogs (MessageDlg, TOpenDialog) are now fully automatable.
+
+---
+
+## Ongoing Priorities
 
 This document outlines recommended priorities for future development based on the current state of the framework.
 
@@ -250,9 +271,15 @@ end;
 3. Application retains focus
 4. All subsequent `ui_send_keys` work correctly
 
+**Research Notes:**
+- **UI Automation (UIA):** Investigated as a potential solution (no focus requirement). Research concluded that **UIA is not appropriate for DelphiMCP** - see [UIA-RESEARCH-COMPREHENSIVE.md](UIA-RESEARCH-COMPREHENSIVE.md) and [UIA-EXECUTIVE-SUMMARY.md](UIA-EXECUTIVE-SUMMARY.md) for full analysis.
+- **Elevated Helper Application:** Investigated using UIAccess/admin privileges for focus management. Research concluded this approach is **not recommended** due to cost ($216-$520/year code signing), deployment restrictions (Program Files only), and security concerns. See [ELEVATED-HELPER-RESEARCH.md](ELEVATED-HELPER-RESEARCH.md) for comprehensive analysis.
+- **Windows Service Approach:** Investigated using a Windows service with SYSTEM privileges to grant focus permission via IPC. Research concluded this is **NOT recommended** due to excessive complexity (3-process architecture), deployment friction (service installation), and security concerns. See [WINDOWS-SERVICE-FOCUS-RESEARCH.md](WINDOWS-SERVICE-FOCUS-RESEARCH.md) and [FOCUS-SOLUTIONS-COMPARISON.md](FOCUS-SOLUTIONS-COMPARISON.md) for complete analysis.
+- **Recommendation:** The focus issue can be solved with traditional Windows API approaches (AttachThreadInput) at zero cost. For production deployments, UIAccess manifest with code signing is the industry-standard solution. See [FOCUS-CONTROL-QUICK-REFERENCE.md](FOCUS-CONTROL-QUICK-REFERENCE.md) for one-page summary.
+
 **Proposed Solutions:**
 
-**Option A: AttachThreadInput + SetFocus**
+**Option A: AttachThreadInput + SetFocus** ✅ **Recommended**
 ```pascal
 function SetFocusToWindow(TargetHWND: HWND): Boolean;
 var
@@ -282,24 +309,25 @@ SendMessage(TargetHWND, WM_CHAR, Ord('A'), 0);
 More aggressive focus stealing (may still fail on some Windows versions)
 
 **Tradeoffs:**
-- **AttachThreadInput**: Most reliable, but complex and may interfere with user input
+- **AttachThreadInput**: Most reliable, well-documented pattern, eliminates UIA's only advantage over VCL
 - **SendMessage**: Bypasses focus entirely, but some controls don't respond to messages
 - **BringWindowToTop**: Simplest, but Windows security may still block
 
 **Action Plan:**
-1. Research Windows focus restrictions (especially Windows 10+)
-2. Prototype all three approaches
-3. Test with target application focused in background
-4. Test with target application minimized
-5. Implement best solution or combination
+1. Implement AttachThreadInput approach (proven Windows API pattern)
+2. Test with target application focused in background
+3. Test with target application minimized
+4. Fall back to current behavior if AttachThreadInput fails
+5. Document Windows security restrictions (if any)
 
 **Expected Outcome:**
 - `ui_send_keys` works without user needing to click application first
 - Fully autonomous automation possible
+- **Eliminates the only advantage UI Automation has over current approach**
 
 **Time Estimate:** 2-3 hours
 
-**Priority Rationale:** Nice enhancement for UX, but current workaround is acceptable for production use.
+**Priority Rationale:** Nice enhancement for UX, and proves VCL-based approach can match UIA capabilities without complexity overhead.
 
 ---
 
