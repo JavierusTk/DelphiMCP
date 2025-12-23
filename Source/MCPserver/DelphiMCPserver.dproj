@@ -177,19 +177,23 @@
         <DCCReference Include="W:\Delphi-MCP-Server\src\Resources\MCPServer.Resource.Server.pas"/>
         <DCCReference Include="W:\Delphi-MCP-Server\src\Managers\MCPServer.CoreManager.pas"/>
         <DCCReference Include="W:\Delphi-MCP-Server\src\Managers\MCPServer.ToolsManager.pas"/>
-        <DCCReference Include="..\Tools\MCPServer.Tool.Hello.pas"/>
-        <DCCReference Include="..\Tools\MCPServer.Tool.Echo.pas"/>
-        <DCCReference Include="..\Tools\MCPServer.Tool.Time.pas"/>
-        <DCCReference Include="..\Tools\MCPServer.DebugCapture.Types.pas"/>
-        <DCCReference Include="..\Tools\MCPServer.DebugCapture.Core.pas"/>
-        <DCCReference Include="..\Tools\MCPServer.Tool.StartDebugCapture.pas"/>
-        <DCCReference Include="..\Tools\MCPServer.Tool.StopDebugCapture.pas"/>
-        <DCCReference Include="..\Tools\MCPServer.Tool.GetDebugMessages.pas"/>
-        <DCCReference Include="..\Tools\MCPServer.Tool.GetProcessSummary.pas"/>
-        <DCCReference Include="..\Tools\MCPServer.Tool.GetCaptureStatus.pas"/>
-        <DCCReference Include="..\Tools\MCPServer.Tool.PauseResumeCapture.pas"/>
-        <DCCReference Include="..\Tools\MCPServer.Application.PipeClient.pas"/>
-        <DCCReference Include="..\Tools\MCPServer.Application.DynamicProxy.pas"/>
+        <DCCReference Include="..\..\..\DelphiMCPbridge\Source\SharedTools\MCP.Tool.Generic.pas"/>
+        <DCCReference Include="..\..\..\DelphiMCPbridge\Source\SharedTools\MCP.Logger.pas"/>
+        <DCCReference Include="..\..\..\DelphiMCPbridge\Source\SharedTools\MCP.PipeClient.pas"/>
+        <DCCReference Include="..\..\..\DelphiMCPbridge\Source\SharedTools\MCP.DebugCapture.Types.pas"/>
+        <DCCReference Include="..\..\..\DelphiMCPbridge\Source\SharedTools\MCP.DebugCapture.Core.pas"/>
+        <DCCReference Include="..\..\..\DelphiMCPbridge\Source\SharedTools\MCP.Tool.Shared.Hello.pas"/>
+        <DCCReference Include="..\..\..\DelphiMCPbridge\Source\SharedTools\MCP.Tool.Shared.Echo.pas"/>
+        <DCCReference Include="..\..\..\DelphiMCPbridge\Source\SharedTools\MCP.Tool.Shared.Time.pas"/>
+        <DCCReference Include="..\..\..\DelphiMCPbridge\Source\SharedTools\MCP.Tool.Shared.StartDebugCapture.pas"/>
+        <DCCReference Include="..\..\..\DelphiMCPbridge\Source\SharedTools\MCP.Tool.Shared.StopDebugCapture.pas"/>
+        <DCCReference Include="..\..\..\DelphiMCPbridge\Source\SharedTools\MCP.Tool.Shared.GetDebugMessages.pas"/>
+        <DCCReference Include="..\..\..\DelphiMCPbridge\Source\SharedTools\MCP.Tool.Shared.GetCaptureStatus.pas"/>
+        <DCCReference Include="..\..\..\DelphiMCPbridge\Source\SharedTools\MCP.Tool.Shared.GetProcessSummary.pas"/>
+        <DCCReference Include="..\..\..\DelphiMCPbridge\Source\SharedTools\MCP.Tool.Shared.PauseResumeCapture.pas"/>
+        <DCCReference Include="..\MCPbridge\Core\MCPServer.Application.PipeClient.pas"/>
+        <DCCReference Include="..\MCPbridge\Core\MCPServer.Application.DynamicProxy.pas"/>
+        <DCCReference Include="..\MCPbridge\Core\MCP.Tool.Adapter.Indy.pas"/>
         <BuildConfiguration Include="Base">
             <Key>Base</Key>
             <DependentOn>W:\Delphi Current Version.optset</DependentOn>

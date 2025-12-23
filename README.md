@@ -278,10 +278,11 @@ The automation bridge library that connects Delphi applications to MCP servers.
 **Core Components** (`Source/MCPbridge/Core/`):
 - **MCPServer.Application.DynamicProxy.pas** - Dynamic proxy for tool discovery
 - **MCPServer.Application.PipeClient.pas** - Named pipe client for target application
-- **MCPServer.DebugCapture.Core.pas** - OutputDebugString capture engine
-- **MCPServer.DebugCapture.Types.pas** - Debug capture types and structures
+- **MCP.Tool.Adapter.Indy.pas** - Adapter for SharedTools integration
 
-**Built-in Tools** (`Source/MCPbridge/Tools/`):
+**Shared Tools** (from `DelphiMCPbridge/Source/SharedTools/`):
+
+Backend-agnostic tools shared between Indy and mORMot servers:
 
 1. **mcp_hello** - Test connectivity
 2. **mcp_echo** - Echo messages (with optional uppercase)
@@ -292,6 +293,8 @@ The automation bridge library that connects Delphi applications to MCP servers.
 7. **get_capture_status** - Get capture session statistics
 8. **pause_resume_capture** - Pause/resume capture
 9. **get_process_summary** - Process statistics
+
+See also: [DelphiMCPbridge](../DelphiMCPbridge/) for the shared tools implementation.
 
 ## Debug Capture Features
 

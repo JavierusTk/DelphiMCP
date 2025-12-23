@@ -23,21 +23,26 @@ uses
   MCPServer.Resource.Server in 'W:\Delphi-MCP-Server\src\Resources\MCPServer.Resource.Server.pas',
   MCPServer.CoreManager in 'W:\Delphi-MCP-Server\src\Managers\MCPServer.CoreManager.pas',
   MCPServer.ToolsManager in 'W:\Delphi-MCP-Server\src\Managers\MCPServer.ToolsManager.pas',
-  // Bridge infrastructure units (core bridge functionality)
+  // Shared infrastructure (backend-agnostic) - from DelphiMCPbridge
+  MCP.Tool.Generic in '..\..\..\DelphiMCPbridge\Source\SharedTools\MCP.Tool.Generic.pas',
+  MCP.Logger in '..\..\..\DelphiMCPbridge\Source\SharedTools\MCP.Logger.pas',
+  MCP.PipeClient in '..\..\..\DelphiMCPbridge\Source\SharedTools\MCP.PipeClient.pas',
+  MCP.DebugCapture.Types in '..\..\..\DelphiMCPbridge\Source\SharedTools\MCP.DebugCapture.Types.pas',
+  MCP.DebugCapture.Core in '..\..\..\DelphiMCPbridge\Source\SharedTools\MCP.DebugCapture.Core.pas',
+  // Shared tools (9 tools - backend-agnostic implementations)
+  MCP.Tool.Shared.Hello in '..\..\..\DelphiMCPbridge\Source\SharedTools\MCP.Tool.Shared.Hello.pas',
+  MCP.Tool.Shared.Echo in '..\..\..\DelphiMCPbridge\Source\SharedTools\MCP.Tool.Shared.Echo.pas',
+  MCP.Tool.Shared.Time in '..\..\..\DelphiMCPbridge\Source\SharedTools\MCP.Tool.Shared.Time.pas',
+  MCP.Tool.Shared.StartDebugCapture in '..\..\..\DelphiMCPbridge\Source\SharedTools\MCP.Tool.Shared.StartDebugCapture.pas',
+  MCP.Tool.Shared.StopDebugCapture in '..\..\..\DelphiMCPbridge\Source\SharedTools\MCP.Tool.Shared.StopDebugCapture.pas',
+  MCP.Tool.Shared.GetDebugMessages in '..\..\..\DelphiMCPbridge\Source\SharedTools\MCP.Tool.Shared.GetDebugMessages.pas',
+  MCP.Tool.Shared.GetCaptureStatus in '..\..\..\DelphiMCPbridge\Source\SharedTools\MCP.Tool.Shared.GetCaptureStatus.pas',
+  MCP.Tool.Shared.GetProcessSummary in '..\..\..\DelphiMCPbridge\Source\SharedTools\MCP.Tool.Shared.GetProcessSummary.pas',
+  MCP.Tool.Shared.PauseResumeCapture in '..\..\..\DelphiMCPbridge\Source\SharedTools\MCP.Tool.Shared.PauseResumeCapture.pas',
+  // Bridge infrastructure units (Indy-specific adapters)
   MCPServer.Application.PipeClient in '..\MCPbridge\Core\MCPServer.Application.PipeClient.pas',
   MCPServer.Application.DynamicProxy in '..\MCPbridge\Core\MCPServer.Application.DynamicProxy.pas',
-  MCPServer.DebugCapture.Types in '..\MCPbridge\Core\MCPServer.DebugCapture.Types.pas',
-  MCPServer.DebugCapture.Core in '..\MCPbridge\Core\MCPServer.DebugCapture.Core.pas',
-  // Bridge tool implementations (9 tools)
-  MCPServer.Tool.Hello in '..\MCPbridge\Tools\MCPServer.Tool.Hello.pas',
-  MCPServer.Tool.Echo in '..\MCPbridge\Tools\MCPServer.Tool.Echo.pas',
-  MCPServer.Tool.Time in '..\MCPbridge\Tools\MCPServer.Tool.Time.pas',
-  MCPServer.Tool.StartDebugCapture in '..\MCPbridge\Tools\MCPServer.Tool.StartDebugCapture.pas',
-  MCPServer.Tool.StopDebugCapture in '..\MCPbridge\Tools\MCPServer.Tool.StopDebugCapture.pas',
-  MCPServer.Tool.GetDebugMessages in '..\MCPbridge\Tools\MCPServer.Tool.GetDebugMessages.pas',
-  MCPServer.Tool.GetProcessSummary in '..\MCPbridge\Tools\MCPServer.Tool.GetProcessSummary.pas',
-  MCPServer.Tool.GetCaptureStatus in '..\MCPbridge\Tools\MCPServer.Tool.GetCaptureStatus.pas',
-  MCPServer.Tool.PauseResumeCapture in '..\MCPbridge\Tools\MCPServer.Tool.PauseResumeCapture.pas';
+  MCP.Tool.Adapter.Indy in '..\MCPbridge\Core\MCP.Tool.Adapter.Indy.pas';
 
 var
   Server: TMCPIdHTTPServer;
@@ -212,6 +217,10 @@ begin
   TLogger.Info('Starting DelphiMCP Server...');
   TLogger.Info('Listening on port ' + Settings.Port.ToString);
   TLogger.Info('Target application pipe: ' + GetTargetPipeName);
+
+  // Register shared tools (9 backend-agnostic tools)
+  TLogger.Info('Registering shared tools...');
+  RegisterAllSharedToolsIndy;
 
   // Discover and register target application tools dynamically BEFORE creating ToolsManager
   TLogger.Info('Discovering target application tools...');
